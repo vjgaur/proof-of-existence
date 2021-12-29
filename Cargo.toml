@@ -6,17 +6,3 @@ members = [
 ]
 [profile.release]
 panic = 'unwind'
-
-[dependencies.sp-std]
-default-features = false
-git = 'https://github.com/paritytech/substrate.git'
-tag = 'monthly-2021-11-1'  # or the latest monthly
-version = '4.0.0-dev'      # or the latest version
-
-[features]
-default = ['std']
-std = [
-    # -- snip --
-    'sp-std/std',
-]
-

@@ -3,8 +3,8 @@
 
 //All of the pallets used in a runtime must be set to compile with the no_std features.
 // Re-export pallet items so that they can be accessed from the crate namespace.
-pub use pallet::*;
-
+//pub use pallet::*;
+//
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::pallet_prelude::*;
