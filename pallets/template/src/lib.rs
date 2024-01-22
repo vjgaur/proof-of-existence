@@ -52,33 +52,30 @@ pub mod pallet {
 	#[pallet::storage]
 	pub(super) type Claims<T: Config> =
 		StorageMap<_, Blake2_128Concat, T::Hash, (T::AccountId, BlockNumberFor<T>)>;
-	#[pallet::hooks]
-	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
+
 	// Dispatchable functions allow users to interact with the pallet and invoke state changes.
 	// These functions materialize as "extrinsics", which are often compared to transactions.
 	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		
 		#[pallet::weight(Weight::default())]
 		#[pallet::call_index(0)]
-		pub fn create_claim(origin: OriginFor<T>, proof: Vec<u8>) -> DispatchResult {
+		pub fn create_claim(origin: OriginFor<T>, claim: T::Hash) -> DispatchResult {
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
-			// https://docs.substrate.io/v3/runtime/origins
 			let sender = ensure_signed(origin)?;
 
-			// Verify that the specified proof has not already been claimed.
+			// Verify that the specified claim has not already been stored.
 			ensure!(!Claims::<T>::contains_key(&claim), Error::<T>::AlreadyClaimed);
 
 			// Get the block number from the FRAME System pallet.
 			let current_block = <frame_system::Pallet<T>>::block_number();
 
-			// Store the proof with the sender and block number.
+			// Store the claim with the sender and block number.
 			Claims::<T>::insert(&claim, (&sender, current_block));
 
 			// Emit an event that the claim was created.
-			Self::deposit_event(Event::ClaimCreated(sender, proof));
+			Self::deposit_event(Event::ClaimCreated { who: sender, claim });
 
 			Ok(())
 		}
@@ -88,18 +85,19 @@ pub mod pallet {
 		pub fn revoke_claim(origin: OriginFor<T>, claim: T::Hash) -> DispatchResult {
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
-			// https://docs.substrate.io/v3/runtime/origins
 			let sender = ensure_signed(origin)?;
 
 			// Get owner of the claim, if none return an error.
-			let (owner, _) = Claims::<T>::get(&claim).ok_or(Error::<T>::NoSuchClaim);
+			let (owner, _) = Claims::<T>::get(&claim).ok_or(Error::<T>::NoSuchClaim)?;
 
 			// Verify that sender of the current call is the claim owner.
 			ensure!(sender == owner, Error::<T>::NotClaimOwner);
+
 			// Remove claim from storage.
 			Claims::<T>::remove(&claim);
+
 			// Emit an event that the claim was erased.
-			Self::deposit_event(Event::ClaimRevoked(sender, claim));
+			Self::deposit_event(Event::ClaimRevoked { who: sender, claim });
 			Ok(())
 		}
 	}
