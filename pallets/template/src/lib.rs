@@ -9,25 +9,34 @@
 pub mod pallet {
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
-	use sp_std::vec::Vec; // Step 3.1 will include this in `Cargo.toml`
+
+	#[pallet::pallet]
+	pub struct Pallet<T>(_);
+	/// Configure the pallet by specifying the parameters and types on which it depends.
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
-		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+		/// Pallets use weights to measure the complexity of the callable functions.
+		/// Configuring weights is outside the scope of this tutorial, so we will leave it empty for now.
+		type WeightInfo;
 	}
-	#[pallet::event] // <-- Step 3. code block will replace this.
 	#[pallet::error]
 	pub enum Error<T> {
-		/// The proof has already been claimed.
-		ProofAlreadyClaimed,
-		/// The proof does not exist, so it cannot be revoked.
-		NoSuchProof,
-		/// The proof is claimed by another account, so caller can't revoke it.
-		NotProofOwner,
+		/// The claim already exists.
+		AlreadyClaimed,
+		/// The claim does not exist, so it cannot be revoked.
+		NoSuchClaim,
+		/// The claim is owned by another account, so caller can't revoke it.
+		NotClaimOwner,
 	}
 
+	pub mod weights {
+		// Placeholder struct for the pallet weights
+		pub struct SubstrateWeight<T>(core::marker::PhantomData<T>);
+	}
 	// Pallets use events to inform users when important changes are made.
 	// Event documentation should end with an array that provides descriptive names for parameters.
 	// https://docs.substrate.io/v3/runtime/events-and-errors
@@ -39,13 +48,10 @@ pub mod pallet {
 		/// Event emitted when a claim is revoked by the owner. [who, claim]
 		ClaimRevoked(T::AccountId, Vec<u8>),
 	}
-	#[pallet::generate_store(pub(super) trait Store)]
-	#[pallet::generate_storage_info]
-	pub struct Pallet<T>(_);
-
+	//Claim Storage
 	#[pallet::storage]
-	pub(super) type Proofs<T: Config> =
-		StorageMap<_, Blake2_128Concat, Vec<u8>, (T::AccountId, T::BlockNumber), ValueQuery>;
+	pub(super) type Claims<T: Config> =
+		StorageMap<_, Blake2_128Concat, T::Hash, (T::AccountId, BlockNumberFor<T>)>;
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
 	// Dispatchable functions allow users to interact with the pallet and invoke state changes.
@@ -53,7 +59,9 @@ pub mod pallet {
 	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		#[pallet::weight(1_000)]
+		
+		#[pallet::weight(Weight::default())]
+		#[pallet::call_index(0)]
 		pub fn create_claim(origin: OriginFor<T>, proof: Vec<u8>) -> DispatchResult {
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
@@ -61,13 +69,13 @@ pub mod pallet {
 			let sender = ensure_signed(origin)?;
 
 			// Verify that the specified proof has not already been claimed.
-			ensure!(!Proofs::<T>::contains_key(&proof), Error::<T>::ProofAlreadyClaimed);
+			ensure!(!Claims::<T>::contains_key(&claim), Error::<T>::AlreadyClaimed);
 
 			// Get the block number from the FRAME System pallet.
 			let current_block = <frame_system::Pallet<T>>::block_number();
 
 			// Store the proof with the sender and block number.
-			Proofs::<T>::insert(&proof, (&sender, current_block));
+			Claims::<T>::insert(&claim, (&sender, current_block));
 
 			// Emit an event that the claim was created.
 			Self::deposit_event(Event::ClaimCreated(sender, proof));
@@ -75,27 +83,23 @@ pub mod pallet {
 			Ok(())
 		}
 
-		#[pallet::weight(10_000)]
-		pub fn revoke_claim(origin: OriginFor<T>, proof: Vec<u8>) -> DispatchResult {
+		#[pallet::weight(Weight::default())]
+		#[pallet::call_index(1)]
+		pub fn revoke_claim(origin: OriginFor<T>, claim: T::Hash) -> DispatchResult {
 			// Check that the extrinsic was signed and get the signer.
 			// This function will return an error if the extrinsic is not signed.
 			// https://docs.substrate.io/v3/runtime/origins
 			let sender = ensure_signed(origin)?;
 
-			// Verify that the specified proof has been claimed.
-			ensure!(Proofs::<T>::contains_key(&proof), Error::<T>::NoSuchProof);
-
-			// Get owner of the claim.
-			let (owner, _) = Proofs::<T>::get(&proof);
+			// Get owner of the claim, if none return an error.
+			let (owner, _) = Claims::<T>::get(&claim).ok_or(Error::<T>::NoSuchClaim);
 
 			// Verify that sender of the current call is the claim owner.
-			ensure!(sender == owner, Error::<T>::NotProofOwner);
-
+			ensure!(sender == owner, Error::<T>::NotClaimOwner);
 			// Remove claim from storage.
-			Proofs::<T>::remove(&proof);
-
+			Claims::<T>::remove(&claim);
 			// Emit an event that the claim was erased.
-			Self::deposit_event(Event::ClaimRevoked(sender, proof));
+			Self::deposit_event(Event::ClaimRevoked(sender, claim));
 			Ok(())
 		}
 	}
